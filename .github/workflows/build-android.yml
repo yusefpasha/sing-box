@@ -1,11 +1,11 @@
-name: Build Android Library (Latest Stable)
+name: Build Android Core (Stable - Lightweight)
 
 on:
   workflow_dispatch:
 
 jobs:
   build_aar:
-    name: Build Latest Stable AAR
+    name: Build AAR Library
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -14,34 +14,24 @@ jobs:
           fetch-depth: 0
           submodules: 'recursive'
 
-      # مرحله جدید: پیدا کردن و سوییچ روی آخرین نسخه استیبل رسمی
+      # مرحله 1: پیدا کردن آخرین نسخه پایدار (Stable)
       - name: Checkout Latest Stable Version
         id: checkout_stable
         run: |
-          # 1. Add upstream remote to fetch official tags
           git remote add upstream https://github.com/sagernet/sing-box.git
           git fetch upstream --tags
-          
-          # 2. Find the latest stable tag (exclude beta, alpha, rc)
-          # We sort by version, filter out pre-releases, and take the top one.
+          # فیلتر کردن نسخه‌های بتا و انتخاب آخرین نسخه اصلی
           LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -v -E 'beta|alpha|rc' | head -n 1)
-          
           echo "Found latest stable version: $LATEST_TAG"
           
-          # 3. Checkout that specific tag
           git checkout $LATEST_TAG
-          
-          # 4. Update submodules for this version
           git submodule update --init --recursive
-
-          # 5. Set version to env for naming
           echo "VERSION=$LATEST_TAG" >> $GITHUB_ENV
 
+      # مرحله 2: نصب Go نسخه جدید (سازگار با نسخه های جدید sing-box)
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          # Use 1.23+ which is required for current stable versions
-          # (1.25 in your original file is for future dev versions)
           go-version: ^1.23
 
       - name: Setup Java
@@ -55,20 +45,30 @@ jobs:
         with:
           ndk-version: r28
 
-      - name: Install Dependencies & Build Library
+      # مرحله 3: نصب ابزار Gomobile
+      - name: Install Gomobile
         run: |
-          make lib_install
-          export PATH="$PATH:$(go env GOPATH)/bin"
-          make lib_android
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          # مقداردهی اولیه gomobile
+          $(go env GOPATH)/bin/gomobile init
 
-      - name: Rename AAR File
+      # مرحله 4: بیلد دستی با تگ‌های ضروری (بدون naive)
+      - name: Build Library Custom
         run: |
-          # Rename to constant name for easier usage in Android Studio
-          mv *.aar singbox-core.aar
+          # این تگ‌ها برای VLESS Reality, Hysteria2 و ... ضروری هستند
+          # with_clash_api برای مدیریت سرویس‌ها و آمار لازم است
+          # with_gvisor برای مدیریت TUN در اندروید حیاتی است
+          TAGS="with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,with_conntrack,with_ech"
+          
+          gomobile bind -v -target=android -androidapi 21 \
+          -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=${{ env.VERSION }}" \
+          -o singbox-core.aar \
+          -tags "$TAGS" \
+          ./mobile
 
       - name: Upload AAR Artifacts
         uses: actions/upload-artifact@v4
         with:
-          # Artifact name includes the version (e.g., singbox-core-v1.10.1)
           name: singbox-core-${{ env.VERSION }}
           path: singbox-core.aar
