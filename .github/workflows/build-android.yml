@@ -1,4 +1,4 @@
-name: Build Android Core (Stable - Lightweight)
+name: Build Android Core (Fixed & Stable)
 
 on:
   workflow_dispatch:
@@ -14,13 +14,13 @@ jobs:
           fetch-depth: 0
           submodules: 'recursive'
 
-      # مرحله 1: پیدا کردن آخرین نسخه پایدار (Stable)
+      # 1. Fetch and Checkout Latest Stable Tag
       - name: Checkout Latest Stable Version
         id: checkout_stable
         run: |
           git remote add upstream https://github.com/sagernet/sing-box.git
           git fetch upstream --tags
-          # فیلتر کردن نسخه‌های بتا و انتخاب آخرین نسخه اصلی
+          # Get the latest stable version (exclude beta/alpha)
           LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -v -E 'beta|alpha|rc' | head -n 1)
           echo "Found latest stable version: $LATEST_TAG"
           
@@ -28,7 +28,6 @@ jobs:
           git submodule update --init --recursive
           echo "VERSION=$LATEST_TAG" >> $GITHUB_ENV
 
-      # مرحله 2: نصب Go نسخه جدید (سازگار با نسخه های جدید sing-box)
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -45,27 +44,40 @@ jobs:
         with:
           ndk-version: r28
 
-      # مرحله 3: نصب ابزار Gomobile
+      # 2. Install Gomobile Toolchain
       - name: Install Gomobile
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-          # مقداردهی اولیه gomobile
           $(go env GOPATH)/bin/gomobile init
 
-      # مرحله 4: بیلد دستی با تگ‌های ضروری (بدون naive)
+      # 3. CRITICAL FIX: Explicitly get the bind package and dependencies
+      # This fixes "unable to import bind" and "no exported names" errors
+      - name: Fix Dependencies
+        run: |
+          # Download the bind package required by gobind
+          go get golang.org/x/mobile/bind
+          # Ensure all other modules are downloaded
+          go mod download
+          # Tidy up to ensure go.mod is consistent
+          go mod tidy
+
+      # 4. Build Manually (Without Naive)
       - name: Build Library Custom
         run: |
-          # این تگ‌ها برای VLESS Reality, Hysteria2 و ... ضروری هستند
-          # with_clash_api برای مدیریت سرویس‌ها و آمار لازم است
-          # with_gvisor برای مدیریت TUN در اندروید حیاتی است
+          # Tags required for functionality (excluding naive to prevent linker errors)
           TAGS="with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,with_conntrack,with_ech"
           
+          # Run gomobile bind
           gomobile bind -v -target=android -androidapi 21 \
           -ldflags "-s -w -X github.com/sagernet/sing-box/constant.Version=${{ env.VERSION }}" \
           -o singbox-core.aar \
           -tags "$TAGS" \
           ./mobile
+
+      - name: Rename AAR File
+        run: |
+          mv *.aar singbox-core.aar
 
       - name: Upload AAR Artifacts
         uses: actions/upload-artifact@v4
