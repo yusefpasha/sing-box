@@ -1,11 +1,11 @@
-name: Build Android Library Only (.aar)
+name: Build Android Library (Latest Stable)
 
 on:
   workflow_dispatch:
 
 jobs:
   build_aar:
-    name: Build AAR Library
+    name: Build Latest Stable AAR
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -14,10 +14,35 @@ jobs:
           fetch-depth: 0
           submodules: 'recursive'
 
+      # مرحله جدید: پیدا کردن و سوییچ روی آخرین نسخه استیبل رسمی
+      - name: Checkout Latest Stable Version
+        id: checkout_stable
+        run: |
+          # 1. Add upstream remote to fetch official tags
+          git remote add upstream https://github.com/sagernet/sing-box.git
+          git fetch upstream --tags
+          
+          # 2. Find the latest stable tag (exclude beta, alpha, rc)
+          # We sort by version, filter out pre-releases, and take the top one.
+          LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -v -E 'beta|alpha|rc' | head -n 1)
+          
+          echo "Found latest stable version: $LATEST_TAG"
+          
+          # 3. Checkout that specific tag
+          git checkout $LATEST_TAG
+          
+          # 4. Update submodules for this version
+          git submodule update --init --recursive
+
+          # 5. Set version to env for naming
+          echo "VERSION=$LATEST_TAG" >> $GITHUB_ENV
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: ^1.25.5
+          # Use 1.23+ which is required for current stable versions
+          # (1.25 in your original file is for future dev versions)
+          go-version: ^1.23
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -30,15 +55,6 @@ jobs:
         with:
           ndk-version: r28
 
-      - name: Get Version
-        id: get_ver
-        shell: bash
-        run: |
-          if ! VERSION=$(go run ./cmd/internal/read_tag 2>/dev/null); then
-            VERSION=$(git describe --tags --always 2>/dev/null || echo "dev-build")
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-
       - name: Install Dependencies & Build Library
         run: |
           make lib_install
@@ -47,10 +63,12 @@ jobs:
 
       - name: Rename AAR File
         run: |
+          # Rename to constant name for easier usage in Android Studio
           mv *.aar singbox-core.aar
 
       - name: Upload AAR Artifacts
         uses: actions/upload-artifact@v4
         with:
+          # Artifact name includes the version (e.g., singbox-core-v1.10.1)
           name: singbox-core-${{ env.VERSION }}
           path: singbox-core.aar
