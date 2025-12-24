@@ -83,8 +83,6 @@ jobs:
       # strictly to keep the response readable. The focus is on build_android and upload below.
       # PROCEED TO build_android JOB BELOW WHICH HAS THE KEY CHANGES.
 
-  # ... (Assume build_darwin and build_windows are unchanged) ...
-
   build_android:
     name: Build Android
     if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Android'
@@ -114,65 +112,45 @@ jobs:
         run: |-
           git ls-remote --exit-code --tags origin v${{ needs.calculate_version.outputs.version }} || echo "PUBLISHED=false" >> "$GITHUB_ENV"
           git tag v${{ needs.calculate_version.outputs.version }} -f
+
       - name: Build library
         run: |-
           make lib_install
           export PATH="$PATH:$(go env GOPATH)/bin"
-          # This command generates Libbox.aar in the root directory
+          # این دستور فایل aar را می‌سازد و تمام چیزی است که شما نیاز دارید
           make lib_android
         env:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
-      # ... (Checkout main/dev branch logic unchanged) ...
-
-      - name: Gradle cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.gradle
-          key: gradle-${{ hashFiles('**/*.gradle') }}
-
-      # ... (Update version logic unchanged) ...
-
-      - name: Build APKs
-        run: |-
-          mkdir clients/android/app/libs
-          cp *.aar clients/android/app/libs
-          cd clients/android
-          ./gradlew :app:assemblePlayRelease :app:assembleOtherRelease
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
-
-      # === [CHANGE 1]: Modified Prepare Upload to include .aar with fixed name ===
       - name: Prepare upload
         run: |-
           mkdir -p dist
           
-          # 1. Copy the generated AAR file and rename it to a fixed name
-          # Using 'sing-box-android.aar' ensures downstream scripts always know what to look for
-          cp Libbox.aar dist/sing-box-android.aar
+          # کپی کردن فایل aar ساخته شده با نام ثابت
+          # معمولا خروجی در روت پروژه با نام Libbox.aar ایجاد می‌شود
+          if [ -f "Libbox.aar" ]; then
+            cp Libbox.aar dist/sing-box-android.aar
+            echo "Successfully copied Libbox.aar to dist/sing-box-android.aar"
+          else
+            echo "Error: Libbox.aar not found!"
+            ls -R
+            exit 1
+          fi
           
-          # 2. Copy APKs (Optional, keep if you want APKs alongside AAR)
-          cp clients/android/app/build/outputs/apk/other/release/*.apk dist || true
-          
-          VERSION_CODE=$(grep VERSION_CODE clients/android/version.properties | cut -d= -f2)
-          VERSION_NAME=$(grep VERSION_NAME clients/android/version.properties | cut -d= -f2)
+          # ساخت فایل متادیتا (فقط ورژن را نگه می‌داریم چون فایل پراپرتی ممکن است نباشد)
+          echo "Writing version info..."
           cat > dist/SFA-version-metadata.json << EOF
           {
-            "version_code": ${VERSION_CODE},
-            "version_name": "${VERSION_NAME}"
+            "version": "${{ needs.calculate_version.outputs.version }}"
           }
           EOF
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: binary-android-apks
+          name: binary-android-aar
           path: 'dist'
-
-  # ... (publish_android and build_apple unchanged) ...
 
   upload:
     name: Upload builds
