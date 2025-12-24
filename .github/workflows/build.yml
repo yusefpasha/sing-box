@@ -117,7 +117,6 @@ jobs:
         run: |-
           make lib_install
           export PATH="$PATH:$(go env GOPATH)/bin"
-          # این دستور فایل aar را می‌سازد و تمام چیزی است که شما نیاز دارید
           make lib_android
         env:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
@@ -127,19 +126,20 @@ jobs:
         run: |-
           mkdir -p dist
           
-          # کپی کردن فایل aar ساخته شده با نام ثابت
-          # معمولا خروجی در روت پروژه با نام Libbox.aar ایجاد می‌شود
-          if [ -f "Libbox.aar" ]; then
-            cp Libbox.aar dist/sing-box-android.aar
-            echo "Successfully copied Libbox.aar to dist/sing-box-android.aar"
+          # پیدا کردن هر فایلی که با .aar تمام می‌شود
+          AAR_FILE=$(find . -maxdepth 1 -name "*.aar" | head -n 1)
+          
+          if [ -n "$AAR_FILE" ]; then
+            echo "Found AAR file: $AAR_FILE"
+            cp "$AAR_FILE" dist/sing-box-android.aar
           else
-            echo "Error: Libbox.aar not found!"
-            ls -R
+            echo "Error: No .aar file found in root directory!"
+            # نمایش فایل‌های موجود در روت برای دیباگ (بدون ریکرسیو که لاگ شلوغ نشود)
+            ls -lh
             exit 1
           fi
           
-          # ساخت فایل متادیتا (فقط ورژن را نگه می‌داریم چون فایل پراپرتی ممکن است نباشد)
-          echo "Writing version info..."
+          # متادیتا
           cat > dist/SFA-version-metadata.json << EOF
           {
             "version": "${{ needs.calculate_version.outputs.version }}"
