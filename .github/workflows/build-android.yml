@@ -1,7 +1,7 @@
 name: Build Android Core
 
 on:
-  workflow_dispatch: # قابلیت اجرای دستی
+  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -11,12 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.23' # نسخه پیشنهادی برای 2025
+          go-version: '1.25'
 
       - name: Setup Java (required for gomobile)
         uses: actions/setup-java@v4
@@ -27,7 +27,7 @@ jobs:
       - name: Setup Android NDK
         uses: android-actions/setup-android@v3
         with:
-          cmdline-tools-version: 11076708 # آخرین نسخه کامندلاین تولز
+          cmdline-tools-version: 11076708
 
       - name: Install Gomobile
         run: |
@@ -38,18 +38,17 @@ jobs:
         run: gomobile init
 
       - name: Build AAR
-        # دستور زیر به صورت خودکار تمام معماری‌های اندروید را می‌سازد
         run: |
           gomobile bind -v -target=android -androidapi 21 -o libbox.aar ./mobile/
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: libbox-aar
           path: libbox.aar
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: libbox.aar
