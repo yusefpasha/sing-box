@@ -32,8 +32,11 @@ jobs:
 
       - name: Get Version
         id: get_ver
+        shell: bash
         run: |
-          VERSION=$(go run ./cmd/internal/read_tag 2>/dev/null || git describe --tags --always)
+          if ! VERSION=$(go run ./cmd/internal/read_tag 2>/dev/null); then
+            VERSION=$(git describe --tags --always 2>/dev/null || echo "dev-build")
+          fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Install Dependencies & Build Library
