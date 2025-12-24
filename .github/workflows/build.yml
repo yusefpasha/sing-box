@@ -1,14 +1,14 @@
 name: Build
 
-# اضافه کردن دسترسی نوشتن برای ساخت ریلیز (بسیار مهم برای فورک‌ها)
 permissions:
   contents: write
+  packages: write  # این دسترسی برای انتشار در GitHub Packages الزامی است
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version name (e.g., 1.10.0 or 1.10.0-rc1)"
+        description: "Version name (e.g., 1.10.0)"
         required: true
         type: string
       build:
@@ -56,8 +56,6 @@ jobs:
         id: outputs
         run: |-
           echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      # تشخیص هوشمند Pre-release برای استفاده در جاب بعدی
       - name: Check Prerelease
         id: check_prerelease
         run: |
@@ -91,12 +89,9 @@ jobs:
       - name: Setup OpenJDK
         run: |-
           sudo apt update && sudo apt install -y openjdk-17-jdk-headless
-
-      # تگ کردن نسخه برای اینکه بیلد ورژن درست را در خود داشته باشد
       - name: Set tag
         run: |-
           git tag v${{ needs.calculate_version.outputs.version }} -f || true
-
       - name: Build library
         run: |-
           make lib_install
@@ -105,30 +100,79 @@ jobs:
         env:
           JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-
       - name: Prepare upload
         run: |-
           mkdir -p dist
-          # پیدا کردن فایل AAR و تغییر نام
           AAR_FILE=$(find . -maxdepth 1 -name "*.aar" | head -n 1)
-          
           if [ -n "$AAR_FILE" ]; then
             echo "Found AAR file: $AAR_FILE"
             cp "$AAR_FILE" dist/sing-box-android.aar
           else
             echo "Error: No .aar file found!"
-            ls -lh
             exit 1
           fi
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: binary-android-aar
           path: 'dist/*'
 
-  upload:
-    name: Publish Release
+  publish_package:
+    name: Publish to GitHub Packages
+    needs:
+      - calculate_version
+      - build_android
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-android-aar
+          path: dist
+
+      - name: Setup Java/Maven
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Publish to GitHub Packages
+        run: |
+          # Define variables
+          VERSION="${{ needs.calculate_version.outputs.version }}"
+          # Convert username to lowercase for Group ID (Maven convention)
+          GROUP_ID="io.github.$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')"
+          ARTIFACT_ID="sing-box-android"
+          FILE_PATH="dist/sing-box-android.aar"
+
+          echo "Publishing $ARTIFACT_ID version $VERSION to GitHub Packages..."
+          
+          # Use mvn deploy-file to publish the AAR directly without a pom.xml
+          mvn deploy:deploy-file \
+            -DgroupId=$GROUP_ID \
+            -DartifactId=$ARTIFACT_ID \
+            -Dversion=$VERSION \
+            -Dpackaging=aar \
+            -Dfile=$FILE_PATH \
+            -DrepositoryId=github \
+            -Durl=https://maven.pkg.github.com/${{ github.repository }} \
+            --batch-mode
+        env:
+          # Maven uses this env var for authentication (configured in settings.xml implicitly by setup-java or passed directly)
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Settings.xml for Auth
+        # Setup-java doesn't auto-configure deploy-file auth perfectly, so we force a settings.xml
+        run: |
+          mkdir -p ~/.m2
+          echo "<settings><servers><server><id>github</id><username>${{ github.actor }}</username><password>${{ secrets.GITHUB_TOKEN }}</password></server></servers></settings>" > ~/.m2/settings.xml
+
+  upload_release:
+    name: Publish Release Assets
     needs:
       - calculate_version
       - build_android
@@ -141,7 +185,6 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
