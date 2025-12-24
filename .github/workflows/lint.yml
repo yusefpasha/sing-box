@@ -1,15 +1,15 @@
 name: Lint
 
 on:
-  push:
-    branches:
-      - stable-next
-      - main-next
-      - dev-next
-    paths-ignore:
-      - '**.md'
-      - '.github/**'
-      - '!.github/workflows/lint.yml'
+#  push:
+#    branches:
+#      - stable-next
+#      - main-next
+#      - dev-next
+#    paths-ignore:
+#      - '**.md'
+#      - '.github/**'
+#      - '!.github/workflows/lint.yml'
   pull_request:
     branches:
       - stable-next

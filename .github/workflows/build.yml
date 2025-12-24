@@ -11,7 +11,7 @@ on:
         description: "Build type"
         required: true
         type: choice
-        default: "All"
+        default: "Android"
         options:
           - All
           - Binary
@@ -23,10 +23,10 @@ on:
           - tvOS
           - macOS-standalone
           - publish-android
-  push:
-    branches:
-      - main-next
-      - dev-next
+#  push:
+#    branches:
+#      - main-next
+#      - dev-next
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.build }}
